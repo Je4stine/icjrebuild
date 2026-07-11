@@ -2,7 +2,7 @@
 -- Description: Create posts table for user content
 
 CREATE TABLE IF NOT EXISTS posts (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     post_title VARCHAR(500) NOT NULL,
     post_content TEXT NOT NULL,
     media LONGBLOB,

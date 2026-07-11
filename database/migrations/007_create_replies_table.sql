@@ -2,7 +2,7 @@
 -- Description: Create replies table for threaded discussions
 
 CREATE TABLE IF NOT EXISTS replies (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     content TEXT NOT NULL,
     author VARCHAR(255) NOT NULL,
     conversation_id CHAR(36) NOT NULL,

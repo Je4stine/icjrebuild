@@ -2,7 +2,7 @@
 -- Description: Create conversations table for forum discussions
 
 CREATE TABLE IF NOT EXISTS conversations (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     author VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     forum_id CHAR(36) NOT NULL,

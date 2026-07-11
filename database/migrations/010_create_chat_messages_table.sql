@@ -2,7 +2,7 @@
 -- Description: Create chat messages table
 
 CREATE TABLE IF NOT EXISTS chat_messages (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     conversation_id CHAR(36) NOT NULL,
     sender_id INT NOT NULL,
     receiver_id INT NOT NULL,

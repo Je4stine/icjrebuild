@@ -24,6 +24,15 @@ class User {
         // Fetch the created user
         return $this->findById($lastInsertId);
     }
+
+    public function toAuthResponse($user) {
+        return [
+            'id' => (int)$user['id'],
+            'firstname' => $user['first_name'],
+            'lastname' => $user['last_name'],
+            'email' => $user['email']
+        ];
+    }
     
     public function findById($id) {
         $sql = "SELECT id, first_name, last_name, email, password FROM users WHERE id = :id";

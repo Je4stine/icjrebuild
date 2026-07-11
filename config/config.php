@@ -1,34 +1,70 @@
 <?php
+function app_env($key, $default = null) {
+    $value = getenv($key);
+
+    if ($value === false && isset($_ENV[$key])) {
+        $value = $_ENV[$key];
+    }
+
+    if ($value === false && isset($_SERVER[$key])) {
+        $value = $_SERVER[$key];
+    }
+
+    if ($value === false || $value === '') {
+        return $default;
+    }
+
+    return $value;
+}
+
+function app_default_env() {
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    $isLocalHost = $host === '' || strpos($host, 'localhost') !== false || strpos($host, '127.0.0.1') !== false;
+
+    return $isLocalHost ? 'development' : 'production';
+}
+
+function app_env_list($key, array $default = []) {
+    $value = app_env($key);
+
+    if ($value === null) {
+        return $default;
+    }
+
+    return array_values(array_filter(array_map('trim', explode(',', $value))));
+}
+
 // Application configuration
 define('APP_NAME', 'ICJ Kenya API');
 define('APP_VERSION', '1.0.0');
-define('APP_ENV', 'development'); // development, staging, production
+define('APP_ENV', app_env('APP_ENV', app_default_env())); // development, staging, production
 
 // Database configuration
-define('DB_HOST', 'localhost');
-define('DB_PORT', '3306');
-define('DB_NAME', 'icjkenya');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_HOST', app_env('DB_HOST', 'localhost'));
+define('DB_PORT', app_env('DB_PORT', '3306'));
+define('DB_NAME', app_env('DB_NAME', APP_ENV === 'production' ? null : 'icjkenya'));
+define('DB_USER', app_env('DB_USER', APP_ENV === 'production' ? null : 'root'));
+define('DB_PASS', app_env('DB_PASS', APP_ENV === 'production' ? null : ''));
 
 // JWT configuration
-define('JWT_SECRET', 'your-secret-key-here-change-this-in-production-use-strong-random-key');
+define('JWT_SECRET', app_env('JWT_SECRET', 'your-secret-key-here-change-this-in-production-use-strong-random-key'));
 define('JWT_EXPIRATION', 3600 * 24); // 24 hours
 
 // Email configuration
-define('SMTP_HOST', 'smtp.gmail.com');
-define('SMTP_PORT', 587);
-define('SMTP_USERNAME', 'je4stine@gmail.com');
-define('SMTP_PASSWORD', 'tnizufprkbqcgvry');
-define('FROM_EMAIL', 'je4stine@gmail.com');
-define('FROM_NAME', 'ICJ Kenya');
+define('SMTP_HOST', app_env('SMTP_HOST', 'smtp.gmail.com'));
+define('SMTP_PORT', app_env('SMTP_PORT', 587));
+define('SMTP_USERNAME', app_env('SMTP_USERNAME', ''));
+define('SMTP_PASSWORD', app_env('SMTP_PASSWORD', ''));
+define('FROM_EMAIL', app_env('FROM_EMAIL', SMTP_USERNAME));
+define('FROM_NAME', app_env('FROM_NAME', 'ICJ Kenya'));
 
 // CORS configuration
-define('ALLOWED_ORIGINS', [
+define('ALLOWED_ORIGINS', app_env_list('ALLOWED_ORIGINS', [
     'https://icjkenya.netlify.app',
+    'https://test.bullione.africa',
     'http://localhost:5173',
     'http://localhost:3000'
-]);
+]));
 
 // File upload configuration
 define('MAX_IMAGE_SIZE', 10 * 1024 * 1024); // 10MB

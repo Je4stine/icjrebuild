@@ -4,14 +4,20 @@ class JWTService {
     private $algorithm = 'HS256';
     private $expirationTime = JWT_EXPIRATION;
     
-    public function generateToken($email) {
+    public function generateToken($email, $userId = null) {
         $header = json_encode(['typ' => 'JWT', 'alg' => $this->algorithm]);
-        
-        $payload = json_encode([
+
+        $payloadData = [
             'email' => $email,
             'iat' => time(),
             'exp' => time() + $this->expirationTime
-        ]);
+        ];
+
+        if ($userId !== null) {
+            $payloadData['user_id'] = (int)$userId;
+        }
+
+        $payload = json_encode($payloadData);
         
         $base64Header = $this->base64UrlEncode($header);
         $base64Payload = $this->base64UrlEncode($payload);

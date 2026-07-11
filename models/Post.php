@@ -70,7 +70,7 @@ class Post {
             ':offset' => $offset
         ];
         
-        return $this->db->fetchAll($sql, $params);
+        return array_map([$this, 'toFrontendResponse'], $this->db->fetchAll($sql, $params));
     }
     
     public function getTotalCount() {
@@ -87,20 +87,22 @@ class Post {
                        (SELECT COUNT(*) FROM likes l WHERE l.post_id = p.id) as likes_count
                 FROM posts p 
                 JOIN users u ON p.user_id = u.id 
-                WHERE p.id = :id";
+                WHERE p.id = :id OR p.post_title = :title
+                LIMIT 1";
         
-        return $this->db->fetch($sql, [':id' => $id]);
+        $post = $this->db->fetch($sql, [':id' => $id, ':title' => $id]);
+        return $post ? $this->toFrontendResponse($post) : null;
     }
     
     public function getImageById($id) {
-        $sql = "SELECT media FROM posts WHERE id = :id AND media IS NOT NULL";
-        $result = $this->db->fetch($sql, [':id' => $id]);
+        $sql = "SELECT media FROM posts WHERE (id = :id OR post_title = :title) AND media IS NOT NULL LIMIT 1";
+        $result = $this->db->fetch($sql, [':id' => $id, ':title' => $id]);
         return $result ? $result['media'] : null;
     }
     
     public function getPdfById($id) {
-        $sql = "SELECT document FROM posts WHERE id = :id AND document IS NOT NULL";
-        $result = $this->db->fetch($sql, [':id' => $id]);
+        $sql = "SELECT document FROM posts WHERE (id = :id OR post_title = :title) AND document IS NOT NULL LIMIT 1";
+        $result = $this->db->fetch($sql, [':id' => $id, ':title' => $id]);
         return $result ? $result['document'] : null;
     }
     
@@ -120,12 +122,76 @@ class Post {
                 WHERE p.user_id = :user_id 
                 ORDER BY p.created_at DESC";
         
-        return $this->db->fetchAll($sql, [':user_id' => $userId]);
+        return array_map([$this, 'toFrontendResponse'], $this->db->fetchAll($sql, [':user_id' => $userId]));
     }
     
     public function checkUserOwnership($postId, $userId) {
         $sql = "SELECT COUNT(*) as count FROM posts WHERE id = :id AND user_id = :user_id";
         $result = $this->db->fetch($sql, [':id' => $postId, ':user_id' => $userId]);
         return $result['count'] > 0;
+    }
+
+    public function search($query, $limit = 20, $offset = 0) {
+        $like = '%' . $query . '%';
+        $sql = "SELECT p.id, p.post_title, p.post_content, p.created_at,
+                       u.id as user_id, u.first_name, u.last_name,
+                       CASE WHEN p.media IS NOT NULL THEN true ELSE false END as has_media,
+                       CASE WHEN p.document IS NOT NULL THEN true ELSE false END as has_document,
+                       (SELECT COUNT(*) FROM likes l WHERE l.post_id = p.id) as likes_count
+                FROM posts p
+                JOIN users u ON p.user_id = u.id
+                WHERE p.post_title LIKE :title_query OR p.post_content LIKE :content_query
+                ORDER BY p.created_at DESC
+                LIMIT :limit OFFSET :offset";
+
+        return array_map([$this, 'toFrontendResponse'], $this->db->fetchAll($sql, [
+            ':title_query' => $like,
+            ':content_query' => $like,
+            ':limit' => $limit,
+            ':offset' => $offset
+        ]));
+    }
+
+    public function like($postId, $userId) {
+        return $this->db->execute(
+            "INSERT IGNORE INTO likes (user_id, post_id) VALUES (:user_id, :post_id)",
+            [':user_id' => $userId, ':post_id' => $postId]
+        );
+    }
+
+    public function unlike($postId, $userId) {
+        return $this->db->execute(
+            "DELETE FROM likes WHERE user_id = :user_id AND post_id = :post_id",
+            [':user_id' => $userId, ':post_id' => $postId]
+        );
+    }
+
+    public function toFrontendResponse($post) {
+        $title = $post['post_title'] ?? $post['postTitle'] ?? '';
+        $content = $post['post_content'] ?? $post['postContent'] ?? '';
+        $firstName = $post['first_name'] ?? $post['firstName'] ?? '';
+        $lastName = $post['last_name'] ?? $post['lastName'] ?? '';
+
+        return [
+            'id' => $post['id'],
+            'postTitle' => $title,
+            'postContent' => $content,
+            'content' => $content,
+            'description' => $content,
+            'createdAt' => $post['created_at'] ?? $post['createdAt'] ?? null,
+            'userId' => isset($post['user_id']) ? (int)$post['user_id'] : null,
+            'firstName' => $firstName,
+            'lastName' => $lastName,
+            'author' => trim($firstName . ' ' . $lastName),
+            'hasMedia' => (bool)($post['has_media'] ?? $post['hasMedia'] ?? false),
+            'hasDocument' => (bool)($post['has_document'] ?? $post['hasDocument'] ?? false),
+            'likes' => (int)($post['likes_count'] ?? $post['likes'] ?? 0),
+            'views' => 0,
+            'downloads' => 0,
+            'bookmarks' => 0,
+            'isLiked' => false,
+            'isBookmarked' => false,
+            'categories' => []
+        ];
     }
 }

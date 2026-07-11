@@ -11,13 +11,42 @@ class Database {
     
     private function __construct() {
         try {
+            $this->validateConfig();
+
             $dsn = "mysql:host={$this->host};port={$this->port};dbname={$this->database};charset=utf8mb4";
             $this->connection = new PDO($dsn, $this->username, $this->password);
             $this->connection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->connection->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
             $this->connection->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
         } catch (PDOException $e) {
-            throw new Exception("Database connection failed: " . $e->getMessage());
+            error_log("Database connection failed: " . $e->getMessage());
+            $message = APP_ENV === 'development'
+                ? "Database connection failed: " . $e->getMessage()
+                : "Database connection failed. Check server database configuration.";
+            throw new Exception($message);
+        }
+    }
+
+    private function validateConfig() {
+        $missing = [];
+
+        foreach ([
+            'DB_HOST' => $this->host,
+            'DB_PORT' => $this->port,
+            'DB_NAME' => $this->database,
+            'DB_USER' => $this->username,
+        ] as $key => $value) {
+            if ($value === null || $value === '') {
+                $missing[] = $key;
+            }
+        }
+
+        if ($this->password === null || (APP_ENV === 'production' && $this->password === '')) {
+            $missing[] = 'DB_PASS';
+        }
+
+        if (!empty($missing)) {
+            throw new Exception('Missing database configuration: ' . implode(', ', $missing));
         }
     }
     

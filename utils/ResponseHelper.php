@@ -30,8 +30,9 @@ class ResponseHelper {
     
     public static function paginated($data, $total, $page, $pageSize) {
         $totalPages = ceil($total / $pageSize);
-        
-        self::success([
+
+        http_response_code(200);
+        echo json_encode([
             'content' => $data,
             'totalElements' => $total,
             'totalPages' => $totalPages,
@@ -40,5 +41,6 @@ class ResponseHelper {
             'first' => $page === 0,
             'last' => $page === $totalPages - 1
         ]);
+        exit;
     }
 }

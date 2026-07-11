@@ -17,15 +17,20 @@ class AuthMiddleware {
             
             // Store user info in global variable for use in controllers
             $GLOBALS['current_user_email'] = $payload['email'];
+            $GLOBALS['current_user_id'] = $payload['user_id'] ?? null;
             
         } catch (Exception $e) {
-            $this->unauthorized('Invalid token: ' . $e->getMessage());
+            $this->unauthorized('Invalid or expired token');
         }
     }
     
     private function unauthorized($message) {
         http_response_code(401);
-        echo json_encode(['error' => $message]);
+        echo json_encode([
+            'success' => false,
+            'message' => $message,
+            'data' => null
+        ]);
         exit;
     }
 }

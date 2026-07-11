@@ -2,7 +2,7 @@
 -- Description: Create forum comments table
 
 CREATE TABLE IF NOT EXISTS forum_comments (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     comment TEXT NOT NULL,
     user_id INT NOT NULL,
     forum_id CHAR(36) NOT NULL,

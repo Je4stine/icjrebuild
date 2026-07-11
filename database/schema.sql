@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Posts table
 CREATE TABLE IF NOT EXISTS posts (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     post_title VARCHAR(500) NOT NULL,
     post_content TEXT NOT NULL,
     media LONGBLOB,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS posts (
 
 -- Discussion Forums table
 CREATE TABLE IF NOT EXISTS discussion_forums (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     forum_name VARCHAR(255) NOT NULL,
     topic VARCHAR(255) NOT NULL,
     description TEXT,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS forum_memberships (
 
 -- Forum Comments table
 CREATE TABLE IF NOT EXISTS forum_comments (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     comment TEXT NOT NULL,
     user_id INT NOT NULL,
     forum_id CHAR(36) NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS forum_comments (
 
 -- Conversations table (Forum discussions)
 CREATE TABLE IF NOT EXISTS conversations (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     author VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     forum_id CHAR(36) NOT NULL,
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS conversations (
 
 -- Replies table
 CREATE TABLE IF NOT EXISTS replies (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     content TEXT NOT NULL,
     author VARCHAR(255) NOT NULL,
     conversation_id CHAR(36) NOT NULL,
@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS likes (
 
 -- Chat conversations table
 CREATE TABLE IF NOT EXISTS chat_conversations (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     user1_id INT NOT NULL,
     user2_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -129,13 +129,12 @@ CREATE TABLE IF NOT EXISTS chat_conversations (
     FOREIGN KEY (user2_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE KEY unique_conversation (user1_id, user2_id),
     INDEX idx_chat_conversations_user1 (user1_id),
-    INDEX idx_chat_conversations_user2 (user2_id),
-    CHECK (user1_id < user2_id)
+    INDEX idx_chat_conversations_user2 (user2_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Chat messages table
 CREATE TABLE IF NOT EXISTS chat_messages (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     conversation_id CHAR(36) NOT NULL,
     sender_id INT NOT NULL,
     receiver_id INT NOT NULL,

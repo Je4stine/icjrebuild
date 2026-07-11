@@ -75,8 +75,10 @@ class ForumsController {
             if (!$forum) {
                 ResponseHelper::error('Forum not found', 404);
             }
-            
-            ResponseHelper::success($forum);
+
+            http_response_code(200);
+            echo json_encode($forum);
+            exit;
             
         } catch (Exception $e) {
             ResponseHelper::error('Failed to get forum: ' . $e->getMessage(), 500);
@@ -200,18 +202,19 @@ class ForumsController {
             
             $input = json_decode(file_get_contents('php://input'), true);
             
-            if (empty($input['author']) || empty($input['content']) || empty($input['forumId'])) {
+            $forumId = $input['forumId'] ?? $input['forum_id'] ?? null;
+            if (empty($input['author']) || empty($input['content']) || empty($forumId)) {
                 ResponseHelper::error('Author, content, and forum ID are required', 400);
             }
             
-            $discussion = $this->forumModel->createDiscussion($input, $currentUser['id'], $input['forumId']);
+            $discussion = $this->forumModel->createDiscussion($input, $currentUser['id'], $forumId);
             
             $response = [
                 'id' => $discussion['id'],
                 'author' => $discussion['author'],
                 'content' => $discussion['content'],
                 'createdAt' => $discussion['created_at'],
-                'forumId' => $input['forumId']
+                'forumId' => $forumId
             ];
             
             ResponseHelper::success($response, 'Discussion created successfully', 201);
@@ -224,7 +227,9 @@ class ForumsController {
     public function getAllForumDiscussions($forumId) {
         try {
             $discussions = $this->forumModel->getAllDiscussions($forumId);
-            ResponseHelper::success($discussions);
+            http_response_code(200);
+            echo json_encode($discussions);
+            exit;
             
         } catch (Exception $e) {
             ResponseHelper::error('Failed to get discussions: ' . $e->getMessage(), 500);

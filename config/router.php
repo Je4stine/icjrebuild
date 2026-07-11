@@ -10,19 +10,41 @@ class Router {
     private function setupRoutes() {
         // Auth routes
         $this->post('/api/v1/auth/signup', 'AuthController', 'register');
+        $this->post('/api/v1/auth/register', 'AuthController', 'register');
+        $this->post('/api/v1/auth/signin', 'AuthController', 'signin');
         $this->post('/api/v1/auth/login', 'AuthController', 'login');
+        $this->post('/api/v1/auth/refresh', 'AuthController', 'refresh', ['auth']);
         $this->post('/api/v1/auth/logout', 'AuthController', 'logout');
+        $this->post('/api/v1/auth/reset-password', 'AuthController', 'resetPassword');
         $this->put('/api/v1/auth/users/reset-password', 'AuthController', 'resetPassword', ['auth']);
         $this->delete('/api/v1/auth/deleteAccount/{email}', 'AuthController', 'deleteAccount', ['auth']);
         $this->get('/api/v1/auth/me', 'AuthController', 'getCurrentUser', ['auth']);
         $this->post('/api/v1/auth/forgotPassword', 'AuthController', 'forgotPassword');
         
         // Posts routes
+        $this->get('/api/v1/posts/getAllPosts', 'PostsController', 'getAllPostsFlat');
+        $this->get('/api/v1/posts/search', 'PostsController', 'searchPosts');
+        $this->get('/api/v1/posts/category/{slug}', 'PostsController', 'getPostsByCategory');
+        $this->get('/api/v1/posts/category/{slug}/search', 'PostsController', 'searchPostsByCategory');
         $this->post('/api/v1/posts/createPost', 'PostsController', 'createPost', ['auth']);
         $this->get('/api/v1/posts/allPosts', 'PostsController', 'getAllPosts');
         $this->get('/api/v1/posts/{id}/image', 'PostsController', 'getImageById');
         $this->get('/api/v1/posts/{id}/pdf', 'PostsController', 'getPdfById');
+        $this->get('/api/v1/posts/{id}/file', 'PostsController', 'getFileById');
+        $this->get('/api/v1/posts/{id}/download', 'PostsController', 'downloadPost');
+        $this->post('/api/v1/posts/{id}/download-track', 'PostsController', 'trackDownload', ['auth']);
+        $this->post('/api/v1/posts/{id}/view', 'PostsController', 'trackView', ['auth']);
+        $this->get('/api/v1/posts/{id}/comments', 'PostsController', 'getComments');
+        $this->post('/api/v1/posts/{id}/comments', 'PostsController', 'createComment', ['auth']);
+        $this->post('/api/v1/posts/{id}/like', 'PostsController', 'likePost', ['auth']);
+        $this->delete('/api/v1/posts/{id}/like', 'PostsController', 'unlikePost', ['auth']);
+        $this->post('/api/v1/posts/{id}/unlike', 'PostsController', 'unlikePost', ['auth']);
+        $this->post('/api/v1/posts/{id}/bookmark', 'PostsController', 'bookmarkPost', ['auth']);
+        $this->delete('/api/v1/posts/{id}/bookmark', 'PostsController', 'unbookmarkPost', ['auth']);
+        $this->post('/api/v1/posts/{id}/unbookmark', 'PostsController', 'unbookmarkPost', ['auth']);
         $this->get('/api/v1/posts/post/{id}', 'PostsController', 'getPostById');
+        $this->get('/api/v1/posts/{id}', 'PostsController', 'getPostById');
+        $this->delete('/api/v1/posts/{id}', 'PostsController', 'deletePost', ['auth']);
         $this->delete('/api/v1/posts/deletePost/{id}', 'PostsController', 'deletePost', ['auth']);
         $this->get('/api/v1/posts/allPostsByUserId/{userId}', 'PostsController', 'getAllPostsByUserId');
         
@@ -42,8 +64,58 @@ class Router {
         
         // Chat routes
         $this->get('/api/v1/chat/conversations', 'ChatController', 'getConversations', ['auth']);
+        $this->post('/api/v1/chat/conversations', 'ChatController', 'createConversation', ['auth']);
+        $this->get('/api/v1/chat/conversations/{conversationId}/messages', 'ChatController', 'getMessages', ['auth']);
+        $this->post('/api/v1/chat/conversations/{conversationId}/messages', 'ChatController', 'sendConversationMessage', ['auth']);
+        $this->patch('/api/v1/chat/conversations/{conversationId}/mark-read', 'ChatController', 'markConversationRead', ['auth']);
+        $this->get('/api/v1/chat/online-users', 'ChatController', 'getOnlineUsers', ['auth']);
         $this->post('/api/v1/chat/send', 'ChatController', 'sendMessage', ['auth']);
         $this->get('/api/v1/chat/messages/{conversationId}', 'ChatController', 'getMessages', ['auth']);
+        $this->get('/api/conversation/friends', 'ChatController', 'getFriends', ['auth']);
+        $this->get('/api/conversation/unseenMessages', 'ChatController', 'getUnseenCount', ['auth']);
+        $this->get('/api/conversation/unseenMessages/{fromUserId}', 'ChatController', 'getUnseenCount', ['auth']);
+        $this->put('/api/conversation/setReadMessages', 'ChatController', 'setReadMessages', ['auth']);
+
+        // Users routes
+        $this->get('/api/v1/users/search', 'UsersController', 'search', ['auth']);
+
+        // Notifications routes
+        $this->get('/api/v1/notifications', 'NotificationsController', 'getNotifications', ['auth']);
+        $this->delete('/api/v1/notifications', 'NotificationsController', 'deleteNotifications', ['auth']);
+        $this->get('/api/v1/notifications/unread-count', 'NotificationsController', 'getUnreadCount', ['auth']);
+        $this->patch('/api/v1/notifications/mark-read', 'NotificationsController', 'markAsRead', ['auth']);
+        $this->patch('/api/v1/notifications/mark-all-read', 'NotificationsController', 'markAllAsRead', ['auth']);
+        $this->patch('/api/v1/notifications/{id}/read', 'NotificationsController', 'markOneAsRead', ['auth']);
+
+        // Events routes
+        $this->get('/api/v1/events', 'EventsController', 'getEvents');
+        $this->get('/api/v1/events/filters', 'EventsController', 'getFilters');
+        $this->get('/api/v1/events/search', 'EventsController', 'search');
+        $this->post('/api/v1/events/{id}/like', 'EventsController', 'like', ['auth']);
+        $this->post('/api/v1/events/{id}/unlike', 'EventsController', 'unlike', ['auth']);
+        $this->post('/api/v1/events/{id}/bookmark', 'EventsController', 'bookmark', ['auth']);
+        $this->post('/api/v1/events/{id}/unbookmark', 'EventsController', 'unbookmark', ['auth']);
+        $this->post('/api/v1/events/{id}/register', 'EventsController', 'register', ['auth']);
+        $this->get('/api/v1/events/{id}', 'EventsController', 'getEventById');
+        $this->get('/api/events', 'EventsController', 'getEvents');
+        $this->get('/api/events/filters', 'EventsController', 'getFilters');
+        $this->get('/api/events/search', 'EventsController', 'search');
+        $this->post('/api/events/{id}/like', 'EventsController', 'like', ['auth']);
+        $this->post('/api/events/{id}/unlike', 'EventsController', 'unlike', ['auth']);
+        $this->post('/api/events/{id}/bookmark', 'EventsController', 'bookmark', ['auth']);
+        $this->post('/api/events/{id}/unbookmark', 'EventsController', 'unbookmark', ['auth']);
+        $this->post('/api/events/{id}/register', 'EventsController', 'register', ['auth']);
+        $this->get('/api/events/{id}', 'EventsController', 'getEventById');
+
+        // Profile and support routes
+        $this->get('/api/v1/profile/settings', 'ProfileController', 'getSettings', ['auth']);
+        $this->put('/api/v1/profile/notification-settings', 'ProfileController', 'updateSettings', ['auth']);
+        $this->put('/api/v1/profile/privacy-settings', 'ProfileController', 'updateSettings', ['auth']);
+        $this->put('/api/v1/profile/language-settings', 'ProfileController', 'updateSettings', ['auth']);
+        $this->get('/api/v1/profile/accessibility-settings', 'ProfileController', 'getAccessibilitySettings', ['auth']);
+        $this->put('/api/v1/profile/accessibility-settings', 'ProfileController', 'updateSettings', ['auth']);
+        $this->put('/api/v1/profile/update', 'ProfileController', 'updateProfile', ['auth']);
+        $this->post('/api/v1/support/contact', 'SupportController', 'contact');
     }
     
     private function get($path, $controller, $method, $middleware = []) {
@@ -56,6 +128,10 @@ class Router {
     
     private function put($path, $controller, $method, $middleware = []) {
         $this->addRoute('PUT', $path, $controller, $method, $middleware);
+    }
+
+    private function patch($path, $controller, $method, $middleware = []) {
+        $this->addRoute('PATCH', $path, $controller, $method, $middleware);
     }
     
     private function delete($path, $controller, $method, $middleware = []) {
@@ -85,6 +161,28 @@ class Router {
         // Debug logging
         if (APP_ENV === 'development') {
             error_log("Router Debug: Method = $requestMethod, Original URI = " . parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) . ", Processed URI = $requestUri");
+        }
+
+        if ($requestMethod === 'GET' && ($requestUri === '' || $requestUri === '/')) {
+            $this->sendJson(200, [
+                'name' => APP_NAME,
+                'version' => APP_VERSION,
+                'status' => 'ok',
+                'apiPrefix' => API_PREFIX,
+                'endpoints' => [
+                    'auth' => API_PREFIX . '/auth',
+                    'posts' => API_PREFIX . '/posts',
+                    'forum' => API_PREFIX . '/forum',
+                    'chat' => API_PREFIX . '/chat'
+                ]
+            ]);
+        }
+
+        if ($requestMethod === 'GET' && $requestUri === API_PREFIX . '/health') {
+            $this->sendJson(200, [
+                'status' => 'ok',
+                'service' => APP_NAME
+            ]);
         }
         
         foreach ($this->routes as $route) {
@@ -147,6 +245,12 @@ class Router {
     private function sendError($code, $message) {
         http_response_code($code);
         echo json_encode(['error' => $message]);
+        exit;
+    }
+
+    private function sendJson($code, $payload) {
+        http_response_code($code);
+        echo json_encode($payload);
         exit;
     }
 }

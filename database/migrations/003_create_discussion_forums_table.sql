@@ -2,7 +2,7 @@
 -- Description: Create discussion forums table
 
 CREATE TABLE IF NOT EXISTS discussion_forums (
-    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY,
     forum_name VARCHAR(255) NOT NULL,
     topic VARCHAR(255) NOT NULL,
     description TEXT,

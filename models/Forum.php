@@ -7,8 +7,8 @@ class Forum {
     }
     
     public function create($data, $userId) {
-        $sql = "INSERT INTO discussion_forums (forum_name, topic, description, user_id, created_at) 
-                VALUES (:forum_name, :topic, :description, :user_id, NOW())";
+        $sql = "INSERT INTO discussion_forums (id, forum_name, topic, description, user_id, created_at) 
+                VALUES (UUID(), :forum_name, :topic, :description, :user_id, NOW())";
         
         $params = [
             ':forum_name' => $data['forumName'],
@@ -18,11 +18,15 @@ class Forum {
         ];
         
         $this->db->execute($sql, $params);
-        $forumId = $this->db->lastInsertId();
-        
-        // Fetch the created forum
-        $fetchSql = "SELECT id, forum_name, topic, description, created_at FROM discussion_forums WHERE id = :id";
-        return $this->db->fetch($fetchSql, [':id' => $forumId]);
+
+        $fetchSql = "SELECT id, forum_name, topic, description, created_at
+                     FROM discussion_forums
+                     WHERE user_id = :user_id AND forum_name = :forum_name
+                     ORDER BY created_at DESC LIMIT 1";
+        return $this->db->fetch($fetchSql, [
+            ':user_id' => $userId,
+            ':forum_name' => $data['forumName']
+        ]);
     }
     
     public function getAllForums($page = 0, $pageSize = 10) {
@@ -37,7 +41,7 @@ class Forum {
                 ORDER BY f.created_at DESC 
                 LIMIT :limit OFFSET :offset";
         
-        return $this->db->fetchAll($sql, [':limit' => $pageSize, ':offset' => $offset]);
+        return array_map([$this, 'toFrontendResponse'], $this->db->fetchAll($sql, [':limit' => $pageSize, ':offset' => $offset]));
     }
     
     public function getTotalCount() {
@@ -54,7 +58,8 @@ class Forum {
                 JOIN users u ON f.user_id = u.id 
                 WHERE f.id = :id";
         
-        return $this->db->fetch($sql, [':id' => $id]);
+        $forum = $this->db->fetch($sql, [':id' => $id]);
+        return $forum ? $this->toFrontendResponse($forum) : null;
     }
     
     public function joinForum($forumId, $userId) {
@@ -94,8 +99,8 @@ class Forum {
     }
     
     public function createComment($data, $userId, $forumId) {
-        $sql = "INSERT INTO forum_comments (comment, user_id, forum_id, created_at) 
-                VALUES (:comment, :user_id, :forum_id, NOW())";
+        $sql = "INSERT INTO forum_comments (id, comment, user_id, forum_id, created_at) 
+                VALUES (UUID(), :comment, :user_id, :forum_id, NOW())";
         
         $params = [
             ':comment' => $data['comment'],
@@ -104,11 +109,12 @@ class Forum {
         ];
         
         $this->db->execute($sql, $params);
-        $commentId = $this->db->lastInsertId();
-        
-        // Fetch the created comment
-        $fetchSql = "SELECT id, comment, created_at FROM forum_comments WHERE id = :id";
-        return $this->db->fetch($fetchSql, [':id' => $commentId]);
+
+        $fetchSql = "SELECT id, comment, created_at
+                     FROM forum_comments
+                     WHERE user_id = :user_id AND forum_id = :forum_id
+                     ORDER BY created_at DESC LIMIT 1";
+        return $this->db->fetch($fetchSql, [':user_id' => $userId, ':forum_id' => $forumId]);
     }
     
     public function getComments($forumId) {
@@ -119,12 +125,21 @@ class Forum {
                 WHERE fc.forum_id = :forum_id 
                 ORDER BY fc.created_at ASC";
         
-        return $this->db->fetchAll($sql, [':forum_id' => $forumId]);
+        return array_map(function ($discussion) use ($forumId) {
+            return [
+                'id' => $discussion['id'],
+                'author' => $discussion['author'],
+                'content' => $discussion['content'],
+                'createdAt' => $discussion['created_at'],
+                'forumId' => $forumId,
+                'replyCount' => (int)($discussion['reply_count'] ?? 0)
+            ];
+        }, $this->db->fetchAll($sql, [':forum_id' => $forumId]));
     }
     
     public function createDiscussion($data, $userId, $forumId) {
-        $sql = "INSERT INTO conversations (author, content, forum_id, created_at) 
-                VALUES (:author, :content, :forum_id, NOW())";
+        $sql = "INSERT INTO conversations (id, author, content, forum_id, created_at) 
+                VALUES (UUID(), :author, :content, :forum_id, NOW())";
         
         $params = [
             ':author' => $data['author'],
@@ -133,11 +148,12 @@ class Forum {
         ];
         
         $this->db->execute($sql, $params);
-        $discussionId = $this->db->lastInsertId();
-        
-        // Fetch the created discussion
-        $fetchSql = "SELECT id, author, content, created_at FROM conversations WHERE id = :id";
-        return $this->db->fetch($fetchSql, [':id' => $discussionId]);
+
+        $fetchSql = "SELECT id, author, content, created_at
+                     FROM conversations
+                     WHERE forum_id = :forum_id AND author = :author
+                     ORDER BY created_at DESC LIMIT 1";
+        return $this->db->fetch($fetchSql, [':forum_id' => $forumId, ':author' => $data['author']]);
     }
     
     public function getAllDiscussions($forumId) {
@@ -151,8 +167,8 @@ class Forum {
     }
     
     public function createReply($data, $conversationId, $parentId = null) {
-        $sql = "INSERT INTO replies (content, author, conversation_id, parent_id, created_at) 
-                VALUES (:content, :author, :conversation_id, :parent_id, NOW())";
+        $sql = "INSERT INTO replies (id, content, author, conversation_id, parent_id, created_at) 
+                VALUES (UUID(), :content, :author, :conversation_id, :parent_id, NOW())";
         
         $params = [
             ':content' => $data['content'],
@@ -162,11 +178,12 @@ class Forum {
         ];
         
         $this->db->execute($sql, $params);
-        $replyId = $this->db->lastInsertId();
-        
-        // Fetch the created reply
-        $fetchSql = "SELECT id, content, author, created_at FROM replies WHERE id = :id";
-        return $this->db->fetch($fetchSql, [':id' => $replyId]);
+
+        $fetchSql = "SELECT id, content, author, created_at
+                     FROM replies
+                     WHERE conversation_id = :conversation_id AND author = :author
+                     ORDER BY created_at DESC LIMIT 1";
+        return $this->db->fetch($fetchSql, [':conversation_id' => $conversationId, ':author' => $data['author']]);
     }
     
     public function getRepliesForConversation($conversationId) {
@@ -186,5 +203,21 @@ class Forum {
                 ORDER BY r.created_at ASC";
         
         return $this->db->fetchAll($sql, [':parent_id' => $parentId]);
+    }
+
+    public function toFrontendResponse($forum) {
+        return [
+            'id' => $forum['id'],
+            'forumName' => $forum['forum_name'] ?? $forum['forumName'] ?? '',
+            'topic' => $forum['topic'] ?? '',
+            'description' => $forum['description'] ?? '',
+            'createdAt' => $forum['created_at'] ?? null,
+            'userId' => isset($forum['user_id']) ? (int)$forum['user_id'] : null,
+            'firstName' => $forum['first_name'] ?? '',
+            'lastName' => $forum['last_name'] ?? '',
+            'members' => (int)($forum['member_count'] ?? $forum['members'] ?? 0),
+            'memberCount' => (int)($forum['member_count'] ?? $forum['memberCount'] ?? 0),
+            'commentCount' => (int)($forum['comment_count'] ?? $forum['commentCount'] ?? 0)
+        ];
     }
 }
