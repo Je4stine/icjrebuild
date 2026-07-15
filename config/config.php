@@ -1,4 +1,43 @@
 <?php
+function app_load_env_file($path) {
+    if (!is_readable($path)) {
+        return;
+    }
+
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if ($lines === false) {
+        return;
+    }
+
+    foreach ($lines as $line) {
+        $line = trim($line);
+
+        if ($line === '' || $line[0] === '#' || strpos($line, '=') === false) {
+            continue;
+        }
+
+        [$key, $value] = explode('=', $line, 2);
+        $key = trim($key);
+        $value = trim($value);
+
+        if ($key === '') {
+            continue;
+        }
+
+        $firstChar = substr($value, 0, 1);
+        $lastChar = substr($value, -1);
+        if (($firstChar === '"' && $lastChar === '"') || ($firstChar === "'" && $lastChar === "'")) {
+            $value = substr($value, 1, -1);
+        }
+
+        putenv("$key=$value");
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+    }
+}
+
+app_load_env_file(__DIR__ . '/../.env');
+
 function app_env($key, $default = null) {
     $value = getenv($key);
 
@@ -49,6 +88,11 @@ define('DB_PASS', app_env('DB_PASS', APP_ENV === 'production' ? null : ''));
 // JWT configuration
 define('JWT_SECRET', app_env('JWT_SECRET', 'your-secret-key-here-change-this-in-production-use-strong-random-key'));
 define('JWT_EXPIRATION', 3600 * 24); // 24 hours
+
+// Google OAuth configuration
+define('GOOGLE_CLIENT_ID', app_env('GOOGLE_CLIENT_ID', ''));
+define('GOOGLE_CLIENT_SECRET', app_env('GOOGLE_CLIENT_SECRET', ''));
+define('GOOGLE_REDIRECT_URI', app_env('GOOGLE_REDIRECT_URI', ''));
 
 // Email configuration
 define('SMTP_HOST', app_env('SMTP_HOST', 'smtp.gmail.com'));

@@ -2,10 +2,12 @@
 class ForumsController {
     private $forumModel;
     private $userModel;
+    private $moderationService;
     
     public function __construct() {
         $this->forumModel = new Forum();
         $this->userModel = new User();
+        $this->moderationService = new ContentModerationService();
     }
     
     public function createForum() {
@@ -27,6 +29,12 @@ class ForumsController {
             if (empty($input['forumName']) || empty($input['topic']) || empty($input['description'])) {
                 ResponseHelper::error('Forum name, topic, and description are required', 400);
             }
+
+            $this->moderationService->assertAllowed([
+                $input['forumName'],
+                $input['topic'],
+                $input['description']
+            ], 'Forum contains blocked language');
             
             $forum = $this->forumModel->create($input, $currentUser['id']);
             
@@ -54,12 +62,14 @@ class ForumsController {
         try {
             $pageNo = intval($_GET['pageNo'] ?? 0);
             $pageSize = intval($_GET['pageSize'] ?? 10);
+            $search = trim($_GET['q'] ?? $_GET['query'] ?? '');
+            $category = trim($_GET['category'] ?? '');
             
             $pageSize = min($pageSize, 100);
             $pageNo = max($pageNo, 0);
             
-            $forums = $this->forumModel->getAllForums($pageNo, $pageSize);
-            $total = $this->forumModel->getTotalCount();
+            $forums = $this->forumModel->getAllForums($pageNo, $pageSize, $search, $category);
+            $total = $this->forumModel->getTotalCount($search, $category);
             
             ResponseHelper::paginated($forums, $total, $pageNo, $pageSize);
             
@@ -103,10 +113,22 @@ class ForumsController {
             if (!$forum) {
                 ResponseHelper::error('Forum not found', 404);
             }
+
+            if ($this->forumModel->isUserMember($forumId, $currentUser['id'])) {
+                ResponseHelper::success([
+                    'forumId' => $forumId,
+                    'joined' => true,
+                    'alreadyMember' => true
+                ], 'Already joined forum');
+            }
             
             $this->forumModel->joinForum($forumId, $currentUser['id']);
             
-            ResponseHelper::success(null, 'Successfully joined forum');
+            ResponseHelper::success([
+                'forumId' => $forumId,
+                'joined' => true,
+                'alreadyMember' => false
+            ], 'Successfully joined forum');
             
         } catch (Exception $e) {
             if (strpos($e->getMessage(), 'already a member') !== false) {
@@ -169,6 +191,8 @@ class ForumsController {
             if (empty($input['comment']) || empty($input['forumId'])) {
                 ResponseHelper::error('Comment and forum ID are required', 400);
             }
+
+            $this->moderationService->assertAllowed([$input['comment']], 'Comment contains blocked language');
             
             $comment = $this->forumModel->createComment($input, $currentUser['id'], $input['forumId']);
             
@@ -206,6 +230,11 @@ class ForumsController {
             if (empty($input['author']) || empty($input['content']) || empty($forumId)) {
                 ResponseHelper::error('Author, content, and forum ID are required', 400);
             }
+
+            $this->moderationService->assertAllowed([
+                $input['author'],
+                $input['content']
+            ], 'Discussion contains blocked language');
             
             $discussion = $this->forumModel->createDiscussion($input, $currentUser['id'], $forumId);
             
@@ -226,7 +255,8 @@ class ForumsController {
     
     public function getAllForumDiscussions($forumId) {
         try {
-            $discussions = $this->forumModel->getAllDiscussions($forumId);
+            $currentUser = $this->getCurrentUserOrNull();
+            $discussions = $this->forumModel->getAllDiscussions($forumId, $currentUser['id'] ?? null);
             http_response_code(200);
             echo json_encode($discussions);
             exit;
@@ -243,6 +273,11 @@ class ForumsController {
             if (empty($input['content']) || empty($input['author']) || empty($input['conversationId'])) {
                 ResponseHelper::error('Content, author, and conversation ID are required', 400);
             }
+
+            $this->moderationService->assertAllowed([
+                $input['author'],
+                $input['content']
+            ], 'Reply contains blocked language');
             
             $parentId = $input['parentId'] ?? null;
             $reply = $this->forumModel->createReply($input, $input['conversationId'], $parentId);
@@ -253,7 +288,10 @@ class ForumsController {
                 'author' => $reply['author'],
                 'createdAt' => $reply['created_at'],
                 'conversationId' => $input['conversationId'],
-                'parentId' => $parentId
+                'parentId' => $parentId,
+                'likeCount' => 0,
+                'isLiked' => false,
+                'children' => []
             ];
             
             ResponseHelper::success($response, 'Reply created successfully', 201);
@@ -265,7 +303,8 @@ class ForumsController {
     
     public function getRepliesForConversation($conversationId) {
         try {
-            $replies = $this->forumModel->getRepliesForConversation($conversationId);
+            $currentUser = $this->getCurrentUserOrNull();
+            $replies = $this->forumModel->getRepliesForConversation($conversationId, $currentUser['id'] ?? null);
             ResponseHelper::success($replies);
             
         } catch (Exception $e) {
@@ -275,11 +314,73 @@ class ForumsController {
     
     public function getNestedReplies($parentId) {
         try {
-            $replies = $this->forumModel->getNestedReplies($parentId);
+            $currentUser = $this->getCurrentUserOrNull();
+            $replies = $this->forumModel->getNestedReplies($parentId, $currentUser['id'] ?? null);
             ResponseHelper::success($replies);
             
         } catch (Exception $e) {
             ResponseHelper::error('Failed to get nested replies: ' . $e->getMessage(), 500);
         }
+    }
+
+    public function likeForumTarget($targetType, $targetId) {
+        try {
+            $currentUser = $this->getCurrentUser();
+            $alreadyLiked = $this->forumModel->hasLikedTarget($targetType, $targetId, $currentUser['id']);
+
+            if ($alreadyLiked) {
+                ResponseHelper::success([
+                    'targetType' => $targetType,
+                    'targetId' => $targetId,
+                    'likeCount' => $this->forumModel->getLikeSummary($targetType, $targetId, $currentUser['id'])['likeCount'],
+                    'isLiked' => true,
+                    'alreadyLiked' => true
+                ], 'Already liked');
+            }
+
+            $this->forumModel->likeTarget($targetType, $targetId, $currentUser['id']);
+            $summary = $this->forumModel->getLikeSummary($targetType, $targetId, $currentUser['id']);
+            ResponseHelper::success(array_merge($summary, [
+                'alreadyLiked' => false
+            ]), 'Liked');
+        } catch (Exception $e) {
+            ResponseHelper::error('Failed to like forum item: ' . $e->getMessage(), 500);
+        }
+    }
+
+    public function unlikeForumTarget($targetType, $targetId) {
+        try {
+            $currentUser = $this->getCurrentUser();
+            $this->forumModel->unlikeTarget($targetType, $targetId, $currentUser['id']);
+            $summary = $this->forumModel->getLikeSummary($targetType, $targetId, $currentUser['id']);
+            ResponseHelper::success(array_merge($summary, [
+                'alreadyLiked' => false
+            ]), 'Unliked');
+        } catch (Exception $e) {
+            ResponseHelper::error('Failed to unlike forum item: ' . $e->getMessage(), 500);
+        }
+    }
+
+    private function getCurrentUser() {
+        $currentUserEmail = $GLOBALS['current_user_email'] ?? null;
+        if (!$currentUserEmail) {
+            ResponseHelper::error('User not authenticated', 401);
+        }
+
+        $currentUser = $this->userModel->findByEmail($currentUserEmail);
+        if (!$currentUser) {
+            ResponseHelper::error('User not found', 404);
+        }
+
+        return $currentUser;
+    }
+
+    private function getCurrentUserOrNull() {
+        $currentUserEmail = $GLOBALS['current_user_email'] ?? null;
+        if (!$currentUserEmail) {
+            return null;
+        }
+
+        return $this->userModel->findByEmail($currentUserEmail) ?: null;
     }
 }

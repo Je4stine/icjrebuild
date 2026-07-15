@@ -2,10 +2,12 @@
 class ChatController {
     private $chatModel;
     private $userModel;
+    private $moderationService;
     
     public function __construct() {
         $this->chatModel = new Chat();
         $this->userModel = new User();
+        $this->moderationService = new ContentModerationService();
     }
     
     public function getConversations() {
@@ -54,6 +56,8 @@ class ChatController {
             $receiverId = $input['receiverId'];
             $content = $input['content'];
             $messageType = $input['messageType'] ?? 'TEXT';
+
+            $this->moderationService->assertAllowed([$content], 'Message contains blocked language');
             
             // Check if receiver exists
             $receiver = $this->userModel->findByEmail($input['receiverEmail'] ?? '');
@@ -174,6 +178,8 @@ class ChatController {
             if ($content === '') {
                 ResponseHelper::error('Content is required', 400);
             }
+
+            $this->moderationService->assertAllowed([$content], 'Message contains blocked language');
 
             $receiverId = $this->chatModel->getOtherParticipantId($conversationId, $currentUser['id']);
             if (!$receiverId) {

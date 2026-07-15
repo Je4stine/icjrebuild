@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS posts (
     id CHAR(36) PRIMARY KEY,
     post_title VARCHAR(500) NOT NULL,
     post_content TEXT NOT NULL,
+    category VARCHAR(100) NULL,
     media LONGBLOB,
     document LONGBLOB,
     user_id INT NOT NULL,
@@ -32,7 +33,69 @@ CREATE TABLE IF NOT EXISTS posts (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_posts_user_id (user_id),
     INDEX idx_posts_created_at (created_at),
+    INDEX idx_posts_category (category),
     FULLTEXT idx_posts_search (post_title, post_content)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Post Comments table
+CREATE TABLE IF NOT EXISTS post_comments (
+    id CHAR(36) PRIMARY KEY,
+    post_id CHAR(36) NOT NULL,
+    user_id INT NOT NULL,
+    comment TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_post_comments_post_id (post_id),
+    INDEX idx_post_comments_user_id (user_id),
+    INDEX idx_post_comments_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Notifications table
+CREATE TABLE IF NOT EXISTS notifications (
+    id CHAR(36) PRIMARY KEY,
+    user_id INT NOT NULL,
+    actor_id INT NULL,
+    type VARCHAR(50) NOT NULL DEFAULT 'system',
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    related_type VARCHAR(50) NULL,
+    related_id VARCHAR(64) NULL,
+    is_read TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    read_at TIMESTAMP NULL,
+    deleted_at TIMESTAMP NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_notifications_user_created (user_id, created_at),
+    INDEX idx_notifications_user_read (user_id, is_read),
+    INDEX idx_notifications_related (related_type, related_id),
+    INDEX idx_notifications_deleted (deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Moderation terms table
+CREATE TABLE IF NOT EXISTS moderation_terms (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    term VARCHAR(255) NOT NULL UNIQUE,
+    severity ENUM('review', 'block') NOT NULL DEFAULT 'block',
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_moderation_terms_active (is_active),
+    INDEX idx_moderation_terms_severity (severity)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- User preferences table
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id INT PRIMARY KEY,
+    notification_settings LONGTEXT NULL,
+    privacy_settings LONGTEXT NULL,
+    accessibility_settings LONGTEXT NULL,
+    language VARCHAR(50) NOT NULL DEFAULT 'english',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_preferences_language (language)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Discussion Forums table
@@ -116,6 +179,45 @@ CREATE TABLE IF NOT EXISTS likes (
     UNIQUE KEY unique_like (user_id, post_id),
     INDEX idx_likes_post_id (post_id),
     INDEX idx_likes_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Bookmarks table
+CREATE TABLE IF NOT EXISTS bookmarks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    post_id CHAR(36) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_bookmark (user_id, post_id),
+    INDEX idx_bookmarks_post_id (post_id),
+    INDEX idx_bookmarks_user_id (user_id),
+    INDEX idx_bookmarks_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Forum likes table
+CREATE TABLE IF NOT EXISTS forum_likes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    target_type ENUM('conversation', 'reply') NOT NULL,
+    target_id CHAR(36) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_forum_like (user_id, target_type, target_id),
+    INDEX idx_forum_likes_target (target_type, target_id),
+    INDEX idx_forum_likes_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Event likes table
+CREATE TABLE IF NOT EXISTS event_likes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    event_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_event_like (user_id, event_id),
+    INDEX idx_event_likes_event (event_id),
+    INDEX idx_event_likes_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Chat conversations table

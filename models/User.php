@@ -25,6 +25,31 @@ class User {
         return $this->findById($lastInsertId);
     }
 
+    public function createOAuthUser($data) {
+        $sql = "INSERT INTO users (first_name, last_name, email, password)
+                VALUES (:first_name, :last_name, :email, :password)";
+
+        $params = [
+            ':first_name' => $data['firstname'],
+            ':last_name' => $data['lastname'],
+            ':email' => $data['email'],
+            ':password' => password_hash(bin2hex(random_bytes(24)), PASSWORD_BCRYPT)
+        ];
+
+        $this->db->execute($sql, $params);
+        $lastInsertId = $this->db->lastInsertId();
+        return $this->findById($lastInsertId);
+    }
+
+    public function findOrCreateOAuthUser($data) {
+        $user = $this->findByEmail($data['email']);
+        if ($user) {
+            return $user;
+        }
+
+        return $this->createOAuthUser($data);
+    }
+
     public function toAuthResponse($user) {
         return [
             'id' => (int)$user['id'],
@@ -58,6 +83,150 @@ class User {
         ];
         
         return $this->db->execute($sql, $params);
+    }
+
+    public function resetPassword($userId, $newPassword) {
+        $sql = "UPDATE users SET password = :password WHERE id = :id";
+        return $this->db->execute($sql, [
+            ':password' => password_hash($newPassword, PASSWORD_BCRYPT),
+            ':id' => $userId
+        ]);
+    }
+
+    public function updateProfile($userId, $data) {
+        $sql = "UPDATE users
+                SET first_name = :first_name,
+                    last_name = :last_name
+                WHERE id = :id";
+
+        $this->db->execute($sql, [
+            ':first_name' => $data['firstname'],
+            ':last_name' => $data['lastname'],
+            ':id' => $userId
+        ]);
+
+        return $this->findById($userId);
+    }
+
+    public function getPreferences($userId) {
+        $sql = "SELECT user_id, notification_settings, privacy_settings, accessibility_settings, language
+                FROM user_preferences
+                WHERE user_id = :user_id
+                LIMIT 1";
+
+        $row = $this->db->fetch($sql, [':user_id' => $userId]);
+        if (!$row) {
+            return [
+                'notificationSettings' => [
+                    'emailNotifications' => true,
+                    'postUpdates' => true,
+                    'forumActivity' => true,
+                    'systemAnnouncements' => true
+                ],
+                'privacySettings' => [
+                    'profileVisibility' => 'public',
+                    'showEmail' => false,
+                    'showPhone' => false,
+                    'allowDataCollection' => true
+                ],
+                'accessibilitySettings' => [
+                    'fontSize' => 'medium',
+                    'highContrast' => false,
+                    'reducedMotion' => false,
+                    'darkMode' => false
+                ],
+                'language' => 'english'
+            ];
+        }
+
+        return [
+            'notificationSettings' => json_decode($row['notification_settings'] ?? '{}', true) ?: [
+                'emailNotifications' => true,
+                'postUpdates' => true,
+                'forumActivity' => true,
+                'systemAnnouncements' => true
+            ],
+            'privacySettings' => json_decode($row['privacy_settings'] ?? '{}', true) ?: [
+                'profileVisibility' => 'public',
+                'showEmail' => false,
+                'showPhone' => false,
+                'allowDataCollection' => true
+            ],
+            'accessibilitySettings' => json_decode($row['accessibility_settings'] ?? '{}', true) ?: [
+                'fontSize' => 'medium',
+                'highContrast' => false,
+                'reducedMotion' => false,
+                'darkMode' => false
+            ],
+            'language' => $row['language'] ?? 'english'
+        ];
+    }
+
+    public function upsertPreferences($userId, $data) {
+        $existing = $this->db->fetch(
+            "SELECT user_id FROM user_preferences WHERE user_id = :user_id",
+            [':user_id' => $userId]
+        );
+
+        $notificationSettings = array_key_exists('notificationSettings', $data)
+            ? json_encode($data['notificationSettings'])
+            : null;
+        $privacySettings = array_key_exists('privacySettings', $data)
+            ? json_encode($data['privacySettings'])
+            : null;
+        $accessibilitySettings = array_key_exists('accessibilitySettings', $data)
+            ? json_encode($data['accessibilitySettings'])
+            : null;
+        $language = $data['language'] ?? null;
+
+        if ($existing) {
+            $sql = "UPDATE user_preferences
+                    SET notification_settings = COALESCE(:notification_settings, notification_settings),
+                        privacy_settings = COALESCE(:privacy_settings, privacy_settings),
+                        accessibility_settings = COALESCE(:accessibility_settings, accessibility_settings),
+                        language = COALESCE(:language, language)
+                    WHERE user_id = :user_id";
+
+            $this->db->execute($sql, [
+                ':notification_settings' => $notificationSettings,
+                ':privacy_settings' => $privacySettings,
+                ':accessibility_settings' => $accessibilitySettings,
+                ':language' => $language,
+                ':user_id' => $userId
+            ]);
+        } else {
+            $sql = "INSERT INTO user_preferences (user_id, notification_settings, privacy_settings, accessibility_settings, language)
+                    VALUES (:user_id, :notification_settings, :privacy_settings, :accessibility_settings, :language)";
+
+            $this->db->execute($sql, [
+                ':user_id' => $userId,
+                ':notification_settings' => $notificationSettings ?? json_encode([
+                    'emailNotifications' => true,
+                    'postUpdates' => true,
+                    'forumActivity' => true,
+                    'systemAnnouncements' => true
+                ]),
+                ':privacy_settings' => $privacySettings ?? json_encode([
+                    'profileVisibility' => 'public',
+                    'showEmail' => false,
+                    'showPhone' => false,
+                    'allowDataCollection' => true
+                ]),
+                ':accessibility_settings' => $accessibilitySettings ?? json_encode([
+                    'fontSize' => 'medium',
+                    'highContrast' => false,
+                    'reducedMotion' => false,
+                    'darkMode' => false
+                ]),
+                ':language' => $language ?? 'english'
+            ]);
+        }
+
+        return $this->getPreferences($userId);
+    }
+
+    public function deleteAccount($userId) {
+        return $this->db->execute("DELETE FROM users WHERE id = :id", [':id' => $userId]);
     }
     
     public function delete($email) {

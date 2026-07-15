@@ -46,10 +46,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/config/autoload.php';
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/database/Migration.php';
 require_once __DIR__ . '/config/router.php';
 
 // Start session for auth
 session_start();
+
+// Apply pending database migrations before handling requests.
+// This keeps deployed environments in sync with the codebase when CLI access
+// to the migration tool is not available.
+try {
+    ob_start();
+    $migration = new Migration();
+    $migration->run();
+    ob_end_clean();
+} catch (Throwable $e) {
+    if (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    throw $e;
+}
 
 // Create router instance and handle request
 $router = new Router();

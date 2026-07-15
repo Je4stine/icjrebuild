@@ -11,7 +11,11 @@ class FileUploadHelper {
     ];
     
     const ALLOWED_DOCUMENT_TYPES = [
-        'application/pdf'
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/octet-stream',
+        'application/zip'
     ];
     
     public static function validateImageFile($file) {
@@ -41,8 +45,26 @@ class FileUploadHelper {
             return true; // File is optional
         }
         
-        if (!in_array($file['type'], self::ALLOWED_DOCUMENT_TYPES)) {
-            throw new Exception('Invalid document file type. Only PDF allowed');
+        $extension = self::getFileExtension($file['name'] ?? '');
+        $allowedExtensions = ['pdf', 'doc', 'docx'];
+        if (!in_array($extension, $allowedExtensions)) {
+            throw new Exception('Invalid document file type. Allowed: PDF, DOC, DOCX');
+        }
+
+        $mimeType = $file['type'] ?? '';
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo) {
+                $detectedMimeType = finfo_file($finfo, $file['tmp_name']);
+                finfo_close($finfo);
+                if ($detectedMimeType) {
+                    $mimeType = $detectedMimeType;
+                }
+            }
+        }
+
+        if ($mimeType && !in_array($mimeType, self::ALLOWED_DOCUMENT_TYPES)) {
+            throw new Exception('Invalid document file type. Allowed: PDF, DOC, DOCX');
         }
         
         if ($file['size'] > self::MAX_DOCUMENT_SIZE) {

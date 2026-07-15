@@ -90,6 +90,92 @@ class AuthController {
             $this->error('Invalid credentials', 401);
         }
     }
+
+    public function google() {
+        $frontendRedirectUri = $this->resolveFrontendOAuthRedirectUri($_GET['redirect_uri'] ?? null);
+        if (!$frontendRedirectUri) {
+            $this->error('Invalid OAuth redirect URI', 400);
+        }
+
+        if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+            $this->redirectToFrontendOAuthCallback($frontendRedirectUri, [
+                'error' => 'Google OAuth is not configured on the server.'
+            ]);
+        }
+
+        $googleRedirectUri = $this->resolveGoogleRedirectUri();
+        if (!$googleRedirectUri) {
+            $this->redirectToFrontendOAuthCallback($frontendRedirectUri, [
+                'error' => 'Google OAuth redirect URI is not configured.'
+            ]);
+        }
+
+        $state = base64_encode(json_encode([
+            'redirect_uri' => $frontendRedirectUri
+        ]));
+
+        $query = http_build_query([
+            'client_id' => GOOGLE_CLIENT_ID,
+            'redirect_uri' => $googleRedirectUri,
+            'response_type' => 'code',
+            'scope' => 'openid email profile',
+            'access_type' => 'offline',
+            'prompt' => 'select_account',
+            'state' => $state
+        ]);
+
+        header('Location: https://accounts.google.com/o/oauth2/v2/auth?' . $query, true, 302);
+        exit;
+    }
+
+    public function googleCallback() {
+        $frontendRedirectUri = $this->resolveFrontendOAuthRedirectUriFromState($_GET['state'] ?? null);
+        $frontendRedirectUri = $frontendRedirectUri ?: $this->resolveFrontendOAuthRedirectUri($_GET['redirect_uri'] ?? null);
+
+        if (isset($_GET['error'])) {
+            $this->redirectToFrontendOAuthCallback($frontendRedirectUri, [
+                'error' => urldecode($_GET['error'])
+            ]);
+        }
+
+        $code = $_GET['code'] ?? '';
+        if ($code === '') {
+            $this->redirectToFrontendOAuthCallback($frontendRedirectUri, [
+                'error' => 'Missing Google authorization code.'
+            ]);
+        }
+
+        try {
+            $googleRedirectUri = $this->resolveGoogleRedirectUri();
+            $tokenData = $this->exchangeGoogleCode($code, $googleRedirectUri);
+            $profile = $this->fetchGoogleProfile($tokenData['access_token'] ?? null);
+
+            if (!$profile || empty($profile['email'])) {
+                $this->redirectToFrontendOAuthCallback($frontendRedirectUri, [
+                    'error' => 'Unable to verify Google account.'
+                ]);
+            }
+
+            $user = $this->userModel->findOrCreateOAuthUser([
+                'firstname' => $profile['given_name'] ?? $this->fallbackFirstName($profile['name'] ?? $profile['email']),
+                'lastname' => $profile['family_name'] ?? $this->fallbackLastName($profile['name'] ?? $profile['email']),
+                'email' => $profile['email']
+            ]);
+
+            $appToken = $this->jwtService->generateToken($user['email'], $user['id']);
+            $this->redirectToFrontendOAuthCallback($frontendRedirectUri, [
+                'token' => $appToken,
+                'firstname' => $user['first_name'],
+                'lastname' => $user['last_name'],
+                'email' => $user['email'],
+                'id' => $user['id']
+            ]);
+        } catch (Exception $e) {
+            $this->redirectToFrontendOAuthCallback($frontendRedirectUri, [
+                'error' => 'Google sign-in failed.'
+            ]);
+        }
+    }
     
     public function resetPassword() {
         $input = json_decode(file_get_contents('php://input'), true);
@@ -118,7 +204,8 @@ class AuthController {
             }
             
             // Update password
-            $this->userModel->updatePassword($input['email'], $input['newPassword']);
+            $user = $this->userModel->findByEmail($input['email']);
+            $this->userModel->resetPassword($user['id'], $input['newPassword']);
             
             $this->success(null, 'Password updated successfully');
             
@@ -270,6 +357,172 @@ class AuthController {
             'message' => $message,
             'data' => $data
         ]);
+        exit;
+    }
+
+    private function resolveFrontendOAuthRedirectUri($candidate = null) {
+        $candidate = is_string($candidate) ? trim($candidate) : '';
+        if ($candidate === '') {
+            return $this->defaultFrontendOAuthRedirectUri();
+        }
+
+        if ($this->isAllowedFrontendRedirectUri($candidate)) {
+            return $candidate;
+        }
+
+        return null;
+    }
+
+    private function resolveFrontendOAuthRedirectUriFromState($state = null) {
+        if (!$state) {
+            return null;
+        }
+
+        $decoded = json_decode(base64_decode((string)$state), true);
+        $redirectUri = $decoded['redirect_uri'] ?? null;
+        return $this->resolveFrontendOAuthRedirectUri($redirectUri);
+    }
+
+    private function defaultFrontendOAuthRedirectUri() {
+        if (!empty($_SERVER['HTTP_ORIGIN']) && $this->isAllowedFrontendRedirectUri($_SERVER['HTTP_ORIGIN'] . '/auth/oauth/callback')) {
+            return rtrim($_SERVER['HTTP_ORIGIN'], '/') . '/auth/oauth/callback';
+        }
+
+        if (!empty(ALLOWED_ORIGINS)) {
+            return rtrim(ALLOWED_ORIGINS[0], '/') . '/auth/oauth/callback';
+        }
+
+        return null;
+    }
+
+    private function isAllowedFrontendRedirectUri($uri) {
+        $parts = parse_url($uri);
+        if (!$parts || empty($parts['scheme']) || empty($parts['host'])) {
+            return false;
+        }
+
+        $origin = $parts['scheme'] . '://' . $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '');
+        $path = $parts['path'] ?? '';
+        $expectedSuffix = '/auth/oauth/callback';
+        $hasSuffix = strlen($path) >= strlen($expectedSuffix) && substr($path, -strlen($expectedSuffix)) === $expectedSuffix;
+
+        return in_array($origin, ALLOWED_ORIGINS, true) && $hasSuffix;
+    }
+
+    private function resolveGoogleRedirectUri() {
+        if (!empty(GOOGLE_REDIRECT_URI)) {
+            return GOOGLE_REDIRECT_URI;
+        }
+
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+
+        if ($host === '') {
+            return null;
+        }
+
+        return $scheme . '://' . $host . '/api/v1/auth/google/callback';
+    }
+
+    private function exchangeGoogleCode($code, $redirectUri) {
+        $payload = http_build_query([
+            'code' => $code,
+            'client_id' => GOOGLE_CLIENT_ID,
+            'client_secret' => GOOGLE_CLIENT_SECRET,
+            'redirect_uri' => $redirectUri,
+            'grant_type' => 'authorization_code'
+        ]);
+
+        $ch = curl_init('https://oauth2.googleapis.com/token');
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded']
+        ]);
+
+        $result = curl_exec($ch);
+        if ($result === false) {
+            $error = curl_error($ch);
+            curl_close($ch);
+            throw new Exception('Google token exchange failed: ' . $error);
+        }
+
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $data = json_decode($result, true);
+        if ($status < 200 || $status >= 300 || !is_array($data) || empty($data['access_token'])) {
+            throw new Exception('Google token exchange failed');
+        }
+
+        return $data;
+    }
+
+    private function fetchGoogleProfile($accessToken) {
+        if (!$accessToken) {
+            return null;
+        }
+
+        $ch = curl_init('https://www.googleapis.com/oauth2/v2/userinfo');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $accessToken
+            ]
+        ]);
+
+        $result = curl_exec($ch);
+        if ($result === false) {
+            $error = curl_error($ch);
+            curl_close($ch);
+            throw new Exception('Google profile fetch failed: ' . $error);
+        }
+
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $data = json_decode($result, true);
+        if ($status < 200 || $status >= 300 || !is_array($data)) {
+            throw new Exception('Google profile fetch failed');
+        }
+
+        return $data;
+    }
+
+    private function fallbackFirstName($nameOrEmail) {
+        $base = trim((string)$nameOrEmail);
+        if ($base === '') {
+            return 'Google';
+        }
+
+        $parts = preg_split('/\s+/', $base);
+        return $parts[0] ?: 'Google';
+    }
+
+    private function fallbackLastName($nameOrEmail) {
+        $base = trim((string)$nameOrEmail);
+        if ($base === '') {
+            return 'User';
+        }
+
+        $parts = preg_split('/\s+/', $base);
+        if (count($parts) > 1) {
+            return $parts[count($parts) - 1];
+        }
+
+        return 'User';
+    }
+
+    private function redirectToFrontendOAuthCallback($frontendRedirectUri, array $params = []) {
+        $uri = $frontendRedirectUri ?: $this->defaultFrontendOAuthRedirectUri();
+        if (!$uri) {
+            $this->error('Unable to resolve frontend OAuth redirect URI', 500);
+        }
+
+        $query = http_build_query($params);
+        $separator = strpos($uri, '?') === false ? '?' : '&';
+        header('Location: ' . $uri . ($query ? $separator . $query : ''), true, 302);
         exit;
     }
 }

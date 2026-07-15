@@ -1,8 +1,29 @@
 <?php
 class AuthMiddleware {
     public function handle() {
-        $headers = getallheaders();
-        $authHeader = $headers['Authorization'] ?? '';
+        $headers = function_exists('getallheaders') ? getallheaders() : [];
+        if (!is_array($headers)) {
+            $headers = [];
+        }
+
+        $authHeader =
+            $headers['Authorization'] ??
+            $headers['authorization'] ??
+            $_SERVER['HTTP_AUTHORIZATION'] ??
+            $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ??
+            null;
+
+        if (!$authHeader && function_exists('apache_request_headers')) {
+            $apacheHeaders = apache_request_headers();
+            if (is_array($apacheHeaders)) {
+                $authHeader =
+                    $apacheHeaders['Authorization'] ??
+                    $apacheHeaders['authorization'] ??
+                    $apacheHeaders['HTTP_AUTHORIZATION'] ??
+                    $apacheHeaders['Http_Authorization'] ??
+                    null;
+            }
+        }
         
         if (!$authHeader || !preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
             $this->unauthorized('Missing or invalid authorization header');

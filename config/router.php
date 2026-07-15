@@ -13,6 +13,8 @@ class Router {
         $this->post('/api/v1/auth/register', 'AuthController', 'register');
         $this->post('/api/v1/auth/signin', 'AuthController', 'signin');
         $this->post('/api/v1/auth/login', 'AuthController', 'login');
+        $this->get('/api/v1/auth/google', 'AuthController', 'google');
+        $this->get('/api/v1/auth/google/callback', 'AuthController', 'googleCallback');
         $this->post('/api/v1/auth/refresh', 'AuthController', 'refresh', ['auth']);
         $this->post('/api/v1/auth/logout', 'AuthController', 'logout');
         $this->post('/api/v1/auth/reset-password', 'AuthController', 'resetPassword');
@@ -47,6 +49,7 @@ class Router {
         $this->delete('/api/v1/posts/{id}', 'PostsController', 'deletePost', ['auth']);
         $this->delete('/api/v1/posts/deletePost/{id}', 'PostsController', 'deletePost', ['auth']);
         $this->get('/api/v1/posts/allPostsByUserId/{userId}', 'PostsController', 'getAllPostsByUserId');
+        $this->get('/api/v1/posts/bookmarkedPosts', 'PostsController', 'getBookmarkedPosts', ['auth']);
         
         // Forums routes
         $this->post('/api/v1/forum/createForum', 'ForumsController', 'createForum', ['auth']);
@@ -61,6 +64,9 @@ class Router {
         $this->post('/api/v1/forum/createReply', 'ForumsController', 'createReply', ['auth']);
         $this->get('/api/v1/forum/replies/{conversationId}', 'ForumsController', 'getRepliesForConversation');
         $this->get('/api/v1/forum/nestedReplies/{parentId}', 'ForumsController', 'getNestedReplies');
+        $this->post('/api/v1/forum/{targetType}/{targetId}/like', 'ForumsController', 'likeForumTarget', ['auth']);
+        $this->delete('/api/v1/forum/{targetType}/{targetId}/like', 'ForumsController', 'unlikeForumTarget', ['auth']);
+        $this->post('/api/v1/forum/{targetType}/{targetId}/unlike', 'ForumsController', 'unlikeForumTarget', ['auth']);
         
         // Chat routes
         $this->get('/api/v1/chat/conversations', 'ChatController', 'getConversations', ['auth']);
@@ -115,6 +121,8 @@ class Router {
         $this->get('/api/v1/profile/accessibility-settings', 'ProfileController', 'getAccessibilitySettings', ['auth']);
         $this->put('/api/v1/profile/accessibility-settings', 'ProfileController', 'updateSettings', ['auth']);
         $this->put('/api/v1/profile/update', 'ProfileController', 'updateProfile', ['auth']);
+        $this->put('/api/v1/profile/reset-password', 'ProfileController', 'resetPassword', ['auth']);
+        $this->delete('/api/v1/profile/delete-account', 'ProfileController', 'deleteAccount', ['auth']);
         $this->post('/api/v1/support/contact', 'SupportController', 'contact');
     }
     

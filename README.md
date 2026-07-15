@@ -29,9 +29,10 @@ This is a vanilla PHP conversion of the original Java Spring Boot API for ICJ Ke
    ```
 
 2. **Configure Database**
-   - Create a MySQL database named `icjkenya`
+   - Copy `.env.example` to `.env`
+   - Fill in your database password in `DB_PASS`
    - Run migrations: `php migrate.php run` OR import schema: `mysql -u root -p icjkenya < database/schema.sql`
-   - Update database credentials in `config/config.php`
+   - The backend reads database credentials from environment variables in `.env`
 
 3. **Configure Web Server**
    - Point your web server document root to the `php-api` directory
@@ -45,7 +46,7 @@ This is a vanilla PHP conversion of the original Java Spring Boot API for ICJ Ke
    ```
 
 5. **Update Configuration**
-   - Edit `config/config.php` with your specific settings
+   - Edit `.env` with your specific settings
    - Change JWT secret key for production
    - Update email SMTP settings
    - Set correct database credentials

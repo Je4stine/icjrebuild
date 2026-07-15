@@ -29,31 +29,66 @@ class Forum {
         ]);
     }
     
-    public function getAllForums($page = 0, $pageSize = 10) {
+    public function getAllForums($page = 0, $pageSize = 10, $search = '', $category = '') {
         $offset = $page * $pageSize;
+        $conditions = [];
+        $params = [
+            ':limit' => $pageSize,
+            ':offset' => $offset
+        ];
+
+        if ($category !== '' && strtolower($category) !== 'all') {
+            $conditions[] = 'f.topic = :category';
+            $params[':category'] = $category;
+        }
+
+        if ($search !== '') {
+            $conditions[] = '(f.forum_name LIKE :search OR f.topic LIKE :search OR f.description LIKE :search)';
+            $params[':search'] = '%' . $search . '%';
+        }
+
+        $whereClause = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
         
         $sql = "SELECT f.id, f.forum_name, f.topic, f.description, f.created_at,
                        u.id as user_id, u.first_name, u.last_name,
                        (SELECT COUNT(*) FROM forum_memberships fm WHERE fm.forum_id = f.id) as member_count,
+                       (SELECT COUNT(*) FROM conversations c WHERE c.forum_id = f.id) as discussion_count,
                        (SELECT COUNT(*) FROM forum_comments fc WHERE fc.forum_id = f.id) as comment_count
                 FROM discussion_forums f 
                 JOIN users u ON f.user_id = u.id 
+                {$whereClause}
                 ORDER BY f.created_at DESC 
                 LIMIT :limit OFFSET :offset";
         
-        return array_map([$this, 'toFrontendResponse'], $this->db->fetchAll($sql, [':limit' => $pageSize, ':offset' => $offset]));
+        return array_map([$this, 'toFrontendResponse'], $this->db->fetchAll($sql, $params));
     }
-    
-    public function getTotalCount() {
-        $sql = "SELECT COUNT(*) as total FROM discussion_forums";
-        $result = $this->db->fetch($sql);
+
+    public function getTotalCount($search = '', $category = '') {
+        $conditions = [];
+        $params = [];
+
+        if ($category !== '' && strtolower($category) !== 'all') {
+            $conditions[] = 'topic = :category';
+            $params[':category'] = $category;
+        }
+
+        if ($search !== '') {
+            $conditions[] = '(forum_name LIKE :search OR topic LIKE :search OR description LIKE :search)';
+            $params[':search'] = '%' . $search . '%';
+        }
+
+        $whereClause = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+        $sql = "SELECT COUNT(*) as total FROM discussion_forums {$whereClause}";
+        $result = $this->db->fetch($sql, $params);
         return $result['total'];
     }
     
     public function getById($id) {
         $sql = "SELECT f.id, f.forum_name, f.topic, f.description, f.created_at,
                        u.id as user_id, u.first_name, u.last_name,
-                       (SELECT COUNT(*) FROM forum_memberships fm WHERE fm.forum_id = f.id) as member_count
+                       (SELECT COUNT(*) FROM forum_memberships fm WHERE fm.forum_id = f.id) as member_count,
+                       (SELECT COUNT(*) FROM conversations c WHERE c.forum_id = f.id) as discussion_count,
+                       (SELECT COUNT(*) FROM forum_comments fc WHERE fc.forum_id = f.id) as comment_count
                 FROM discussion_forums f 
                 JOIN users u ON f.user_id = u.id 
                 WHERE f.id = :id";
@@ -156,14 +191,23 @@ class Forum {
         return $this->db->fetch($fetchSql, [':forum_id' => $forumId, ':author' => $data['author']]);
     }
     
-    public function getAllDiscussions($forumId) {
+    public function getAllDiscussions($forumId, $userId = null) {
         $sql = "SELECT c.id, c.author, c.content, c.created_at,
-                       (SELECT COUNT(*) FROM replies r WHERE r.conversation_id = c.id) as reply_count
-                FROM conversations c 
-                WHERE c.forum_id = :forum_id 
+                       (SELECT COUNT(*) FROM replies r WHERE r.conversation_id = c.id) as reply_count,
+                       (SELECT COUNT(*) FROM forum_likes fl WHERE fl.target_type = 'conversation' AND fl.target_id = c.id) as like_count,
+                       CASE WHEN :current_user_id IS NULL THEN 0 ELSE EXISTS(
+                           SELECT 1 FROM forum_likes fl2
+                           WHERE fl2.target_type = 'conversation' AND fl2.target_id = c.id AND fl2.user_id = :current_user_id_check
+                       ) END as is_liked
+                FROM conversations c
+                WHERE c.forum_id = :forum_id
                 ORDER BY c.created_at DESC";
         
-        return $this->db->fetchAll($sql, [':forum_id' => $forumId]);
+        return array_map([$this, 'toDiscussionResponse'], $this->db->fetchAll($sql, [
+            ':forum_id' => $forumId,
+            ':current_user_id' => $userId,
+            ':current_user_id_check' => $userId
+        ]));
     }
     
     public function createReply($data, $conversationId, $parentId = null) {
@@ -186,23 +230,161 @@ class Forum {
         return $this->db->fetch($fetchSql, [':conversation_id' => $conversationId, ':author' => $data['author']]);
     }
     
-    public function getRepliesForConversation($conversationId) {
-        $sql = "SELECT r.id, r.content, r.author, r.created_at, r.parent_id,
-                       (SELECT COUNT(*) FROM replies r2 WHERE r2.parent_id = r.id) as nested_count
-                FROM replies r 
-                WHERE r.conversation_id = :conversation_id AND r.parent_id IS NULL
-                ORDER BY r.created_at ASC";
-        
-        return $this->db->fetchAll($sql, [':conversation_id' => $conversationId]);
+    public function getRepliesForConversation($conversationId, $userId = null) {
+        $flatReplies = $this->getAllRepliesForConversation($conversationId, $userId);
+        return $this->buildReplyTree($flatReplies);
     }
     
-    public function getNestedReplies($parentId) {
-        $sql = "SELECT r.id, r.content, r.author, r.created_at, r.parent_id
-                FROM replies r 
-                WHERE r.parent_id = :parent_id 
+    public function getNestedReplies($parentId, $userId = null) {
+        $reply = $this->db->fetch("SELECT conversation_id FROM replies WHERE id = :id", [':id' => $parentId]);
+        if (!$reply) {
+            return [];
+        }
+
+        $flatReplies = $this->getAllRepliesForConversation($reply['conversation_id'], $userId);
+        $tree = $this->buildReplyTree($flatReplies, $parentId);
+        return $tree;
+    }
+
+    public function likeTarget($targetType, $targetId, $userId) {
+        $this->assertLikeTargetExists($targetType, $targetId);
+
+        return $this->db->execute(
+            "INSERT IGNORE INTO forum_likes (user_id, target_type, target_id)
+             VALUES (:user_id, :target_type, :target_id)",
+            [':user_id' => $userId, ':target_type' => $targetType, ':target_id' => $targetId]
+        );
+    }
+
+    public function hasLikedTarget($targetType, $targetId, $userId) {
+        $sql = "SELECT COUNT(*) as count FROM forum_likes
+                WHERE user_id = :user_id AND target_type = :target_type AND target_id = :target_id";
+
+        $result = $this->db->fetch($sql, [
+            ':user_id' => $userId,
+            ':target_type' => $targetType,
+            ':target_id' => $targetId
+        ]);
+
+        return (int)($result['count'] ?? 0) > 0;
+    }
+
+    public function unlikeTarget($targetType, $targetId, $userId) {
+        return $this->db->execute(
+            "DELETE FROM forum_likes WHERE user_id = :user_id AND target_type = :target_type AND target_id = :target_id",
+            [':user_id' => $userId, ':target_type' => $targetType, ':target_id' => $targetId]
+        );
+    }
+
+    public function getLikeSummary($targetType, $targetId, $userId = null) {
+        $count = $this->db->fetch(
+            "SELECT COUNT(*) as count FROM forum_likes WHERE target_type = :target_type AND target_id = :target_id",
+            [':target_type' => $targetType, ':target_id' => $targetId]
+        );
+
+        $liked = false;
+        if ($userId) {
+            $likedRow = $this->db->fetch(
+                "SELECT COUNT(*) as count FROM forum_likes WHERE user_id = :user_id AND target_type = :target_type AND target_id = :target_id",
+                [':user_id' => $userId, ':target_type' => $targetType, ':target_id' => $targetId]
+            );
+            $liked = (int)($likedRow['count'] ?? 0) > 0;
+        }
+
+        return [
+            'targetType' => $targetType,
+            'targetId' => $targetId,
+            'likeCount' => (int)($count['count'] ?? 0),
+            'isLiked' => $liked
+        ];
+    }
+
+    private function getAllRepliesForConversation($conversationId, $userId = null) {
+        $sql = "SELECT r.id, r.content, r.author, r.created_at, r.parent_id, r.conversation_id,
+                       (SELECT COUNT(*) FROM replies r2 WHERE r2.parent_id = r.id) as nested_count,
+                       (SELECT COUNT(*) FROM forum_likes fl WHERE fl.target_type = 'reply' AND fl.target_id = r.id) as like_count,
+                       CASE WHEN :current_user_id IS NULL THEN 0 ELSE EXISTS(
+                           SELECT 1 FROM forum_likes fl2
+                           WHERE fl2.target_type = 'reply' AND fl2.target_id = r.id AND fl2.user_id = :current_user_id_check
+                       ) END as is_liked
+                FROM replies r
+                WHERE r.conversation_id = :conversation_id
                 ORDER BY r.created_at ASC";
-        
-        return $this->db->fetchAll($sql, [':parent_id' => $parentId]);
+
+        return array_map([$this, 'toReplyResponse'], $this->db->fetchAll($sql, [
+            ':conversation_id' => $conversationId,
+            ':current_user_id' => $userId,
+            ':current_user_id_check' => $userId
+        ]));
+    }
+
+    private function buildReplyTree($replies, $parentId = null) {
+        $childrenByParent = [];
+        foreach ($replies as $reply) {
+            $key = $reply['parentId'] ?? '__root__';
+            $childrenByParent[$key][] = $reply;
+        }
+
+        $build = function ($currentParentId) use (&$build, &$childrenByParent) {
+            $key = $currentParentId ?? '__root__';
+            $children = $childrenByParent[$key] ?? [];
+            return array_map(function ($reply) use (&$build) {
+                $reply['children'] = $build($reply['id']);
+                $reply['nestedCount'] = count($reply['children']);
+                return $reply;
+            }, $children);
+        };
+
+        return $build($parentId);
+    }
+
+    private function assertLikeTargetExists($targetType, $targetId) {
+        if ($targetType === 'conversation') {
+            $row = $this->db->fetch("SELECT id FROM conversations WHERE id = :id", [':id' => $targetId]);
+        } elseif ($targetType === 'reply') {
+            $row = $this->db->fetch("SELECT id FROM replies WHERE id = :id", [':id' => $targetId]);
+        } else {
+            throw new Exception('Invalid forum like target type');
+        }
+
+        if (!$row) {
+            throw new Exception('Forum like target not found');
+        }
+    }
+
+    private function toDiscussionResponse($discussion) {
+        return [
+            'id' => $discussion['id'],
+            'author' => $discussion['author'],
+            'content' => $discussion['content'],
+            'createdAt' => $discussion['created_at'] ?? null,
+            'created_at' => $discussion['created_at'] ?? null,
+            'replyCount' => (int)($discussion['reply_count'] ?? 0),
+            'reply_count' => (int)($discussion['reply_count'] ?? 0),
+            'likeCount' => (int)($discussion['like_count'] ?? 0),
+            'like_count' => (int)($discussion['like_count'] ?? 0),
+            'isLiked' => (bool)($discussion['is_liked'] ?? false)
+        ];
+    }
+
+    private function toReplyResponse($reply) {
+        return [
+            'id' => $reply['id'],
+            'content' => $reply['content'],
+            'author' => $reply['author'],
+            'createdAt' => $reply['created_at'] ?? null,
+            'created_at' => $reply['created_at'] ?? null,
+            'conversationId' => $reply['conversation_id'] ?? null,
+            'conversation_id' => $reply['conversation_id'] ?? null,
+            'parentId' => $reply['parent_id'] ?? null,
+            'parent_id' => $reply['parent_id'] ?? null,
+            'nestedCount' => (int)($reply['nested_count'] ?? 0),
+            'nested_count' => (int)($reply['nested_count'] ?? 0),
+            'likeCount' => (int)($reply['like_count'] ?? 0),
+            'like_count' => (int)($reply['like_count'] ?? 0),
+            'isLiked' => (bool)($reply['is_liked'] ?? false),
+            'children' => []
+        ];
     }
 
     public function toFrontendResponse($forum) {
@@ -217,7 +399,11 @@ class Forum {
             'lastName' => $forum['last_name'] ?? '',
             'members' => (int)($forum['member_count'] ?? $forum['members'] ?? 0),
             'memberCount' => (int)($forum['member_count'] ?? $forum['memberCount'] ?? 0),
-            'commentCount' => (int)($forum['comment_count'] ?? $forum['commentCount'] ?? 0)
+            'discussionCount' => (int)($forum['discussion_count'] ?? $forum['discussionCount'] ?? $forum['discussions'] ?? 0),
+            'discussion_count' => (int)($forum['discussion_count'] ?? $forum['discussionCount'] ?? $forum['discussions'] ?? 0),
+            'discussions' => (int)($forum['discussion_count'] ?? $forum['discussionCount'] ?? $forum['discussions'] ?? 0),
+            'commentCount' => (int)($forum['comment_count'] ?? $forum['commentCount'] ?? 0),
+            'comment_count' => (int)($forum['comment_count'] ?? $forum['commentCount'] ?? 0)
         ];
     }
 }

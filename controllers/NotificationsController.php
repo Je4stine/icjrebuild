@@ -1,33 +1,103 @@
 <?php
 class NotificationsController {
+    private $notificationModel;
+    private $userModel;
+
+    public function __construct() {
+        $this->notificationModel = new Notification();
+        $this->userModel = new User();
+    }
+
     public function getNotifications() {
-        ResponseHelper::success([
-            'notifications' => [],
-            'content' => [],
-            'totalElements' => 0
-        ]);
+        try {
+            $currentUser = $this->getCurrentUser();
+            $limit = min(max((int)($_GET['limit'] ?? 50), 1), 100);
+            $offset = max((int)($_GET['offset'] ?? 0), 0);
+
+            $notifications = $this->notificationModel->getForUser($currentUser['id'], $limit, $offset);
+            $total = $this->notificationModel->countForUser($currentUser['id']);
+
+            ResponseHelper::success([
+                'notifications' => $notifications,
+                'content' => $notifications,
+                'totalElements' => $total
+            ]);
+        } catch (Exception $e) {
+            ResponseHelper::error('Failed to get notifications: ' . $e->getMessage(), 500);
+        }
     }
 
     public function getUnreadCount() {
-        ResponseHelper::success([
-            'count' => 0,
-            'unreadCount' => 0
-        ]);
+        try {
+            $currentUser = $this->getCurrentUser();
+            $count = $this->notificationModel->getUnreadCount($currentUser['id']);
+
+            ResponseHelper::success([
+                'count' => $count,
+                'unreadCount' => $count
+            ]);
+        } catch (Exception $e) {
+            ResponseHelper::error('Failed to get notification count: ' . $e->getMessage(), 500);
+        }
     }
 
     public function markAsRead() {
-        ResponseHelper::success(null, 'Notifications marked as read');
+        try {
+            $currentUser = $this->getCurrentUser();
+            $input = json_decode(file_get_contents('php://input'), true) ?: [];
+            $ids = $input['notificationIds'] ?? $input['ids'] ?? [];
+
+            $this->notificationModel->markAsRead($currentUser['id'], $ids);
+            ResponseHelper::success(['notificationIds' => $ids], 'Notifications marked as read');
+        } catch (Exception $e) {
+            ResponseHelper::error('Failed to mark notifications as read: ' . $e->getMessage(), 500);
+        }
     }
 
     public function markAllAsRead() {
-        ResponseHelper::success(null, 'All notifications marked as read');
+        try {
+            $currentUser = $this->getCurrentUser();
+            $this->notificationModel->markAllAsRead($currentUser['id']);
+            ResponseHelper::success(null, 'All notifications marked as read');
+        } catch (Exception $e) {
+            ResponseHelper::error('Failed to mark notifications as read: ' . $e->getMessage(), 500);
+        }
     }
 
     public function markOneAsRead($id) {
-        ResponseHelper::success(['id' => $id, 'isRead' => true], 'Notification marked as read');
+        try {
+            $currentUser = $this->getCurrentUser();
+            $this->notificationModel->markAsRead($currentUser['id'], [$id]);
+            ResponseHelper::success(['id' => $id, 'isRead' => true], 'Notification marked as read');
+        } catch (Exception $e) {
+            ResponseHelper::error('Failed to mark notification as read: ' . $e->getMessage(), 500);
+        }
     }
 
     public function deleteNotifications() {
-        ResponseHelper::success(null, 'Notifications deleted');
+        try {
+            $currentUser = $this->getCurrentUser();
+            $input = json_decode(file_get_contents('php://input'), true) ?: [];
+            $ids = $input['notificationIds'] ?? $input['ids'] ?? [];
+
+            $this->notificationModel->deleteForUser($currentUser['id'], $ids);
+            ResponseHelper::success(['notificationIds' => $ids], 'Notifications deleted');
+        } catch (Exception $e) {
+            ResponseHelper::error('Failed to delete notifications: ' . $e->getMessage(), 500);
+        }
+    }
+
+    private function getCurrentUser() {
+        $currentUserEmail = $GLOBALS['current_user_email'] ?? null;
+        if (!$currentUserEmail) {
+            ResponseHelper::error('User not authenticated', 401);
+        }
+
+        $currentUser = $this->userModel->findByEmail($currentUserEmail);
+        if (!$currentUser) {
+            ResponseHelper::error('User not found', 404);
+        }
+
+        return $currentUser;
     }
 }
