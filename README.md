@@ -1,6 +1,6 @@
-# ICJ Kenya API - Vanilla PHP Version
+# ICJ  API - Vanilla PHP Version
 
-This is a vanilla PHP conversion of the original Java Spring Boot API for ICJ Kenya platform.
+This is a vanilla PHP conversion of the original Java Spring Boot API for ICJ platform.
 
 ## Features
 
